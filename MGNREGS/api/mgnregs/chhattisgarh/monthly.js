@@ -3,7 +3,18 @@ const MONTH_MAP = {
   '07': 'Jul','08': 'Aug','09': 'Sep','10': 'Oct','11': 'Nov','12': 'Dec'
 };
 
-module.exports = async (req, res) => {
+function normalizeDistrictName(name) {
+  const upper = String(name || '').toUpperCase();
+  const base = upper.replace(/[-]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (base.includes('KABIRDHAM')) return 'KAWARDHA';
+  if (base.includes('GAURELA') || base.includes('PENDRA') || base.includes('MARWAHI')) return 'GAURELA PENDRA MARWAHI';
+  if (base.includes('MANENDRAGARH') || base.includes('CHIRMIRI') || base.includes('BHARATPUR')) return 'MANENDRAGARH-CHIRMIRI-BHARATPUR'.replace(/-/g, ' ');
+  if (base.includes('KHAIRAGARH') || base.includes('CHHUIKHADAN') || base.includes('GANDAI')) return 'KHAIRAGARH-CHHUIKHADAN-GANDAI'.replace(/-/g, ' ');
+  if (base.includes('MOHLA') || base.includes('MANPUR') || base.includes('AMBAGARH')) return 'MOHLA-MANPUR-AMBAGARH CHOWKI'.replace(/-/g, ' ');
+  return base;
+}
+
+export default async function handler(req, res) {
   try {
     const { district = '', month = '', year = '' } = req.query || {};
     if (!district) return res.status(400).json({ error: 'district is required' });
@@ -24,7 +35,8 @@ module.exports = async (req, res) => {
     qs.set('format', 'json');
     qs.set('limit', '100');
     qs.set('filters[state_name]', 'CHHATTISGARH');
-    qs.set('filters[district_name]', String(district).toUpperCase());
+    const districtFilter = normalizeDistrictName(district);
+    qs.set('filters[district_name]', districtFilter);
     qs.set('filters[month]', monthName);
     qs.set('filters[fin_year]', fin_year);
 
@@ -41,11 +53,30 @@ module.exports = async (req, res) => {
       return res.status(502).json({ error: 'upstream_nonjson', contentType, body: body?.slice(0, 500) });
     }
     const data = await upstream.json();
-    const records = Array.isArray(data?.records) ? data.records : [];
+    let records = Array.isArray(data?.records) ? data.records : [];
+    if (!records.length) {
+      const wide = new URL(base);
+      wide.searchParams.set('api-key', API_KEY);
+      wide.searchParams.set('format', 'json');
+      wide.searchParams.set('limit', '5000');
+      wide.searchParams.set('filters[state_name]', 'CHHATTISGARH');
+      wide.searchParams.set('filters[month]', monthName);
+      wide.searchParams.set('filters[fin_year]', fin_year);
+      const u2 = wide.toString();
+      console.log('[api] fallback fetching:', u2);
+      const up2 = await fetch(u2, { headers: { 'User-Agent': 'vercel-serverless' } });
+      const ct2 = up2.headers.get('content-type') || '';
+      if (up2.ok && ct2.includes('json')) {
+        const j2 = await up2.json();
+        const list = Array.isArray(j2?.records) ? j2.records : [];
+        const want = normalizeDistrictName(district);
+        records = list.filter(r => normalizeDistrictName(r?.district_name) === want);
+      }
+    }
     return res.status(200).json({ records });
   } catch (e) {
     return res.status(500).json({ error: 'server_error', message: String(e?.message || e) });
   }
-};
+}
 
 
