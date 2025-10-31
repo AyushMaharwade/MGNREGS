@@ -14,7 +14,7 @@ function normalizeDistrictName(name) {
   return base;
 }
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   try {
     const { district = '', month = '', year = '' } = req.query || {};
     if (!district) return res.status(400).json({ error: 'district is required' });
